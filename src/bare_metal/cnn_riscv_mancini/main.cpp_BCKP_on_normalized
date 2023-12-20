@@ -1,0 +1,38 @@
+#include "types.h"
+#include "top.h"
+#include "coeffs_cifar.h"
+#include "biases_cifar.h"
+#include <stdio.h>
+#include <stdlib.h>
+//#include "testimage.h"
+
+static led_type cifar_class[1];
+
+int main(int argc, char** argv)
+{	
+	image_type image_test[IMAGE_WIDTH*IMAGE_HEIGHT*3];
+	double image_int;
+
+	if ( argc != 2)
+	{	
+		fprintf(stderr, "CHECK ARGUMENTS.");
+		return 0;
+	}
+
+	fprintf(stderr, "Loading %s\n", argv[1]);
+	FILE* f = fopen(argv[1], "r");
+
+	for(int i=0;i<IMAGE_WIDTH*IMAGE_HEIGHT*3;i++) {
+		fscanf(f, "%lf", &image_int);
+		image_test[i] = (image_type)image_int;
+	}
+
+	top(tab_coeffs, tab_biais, cifar_class, image_test);
+
+	printf("The class of the image is     %d\n", (int)cifar_class[0]);
+	
+
+
+	return (int)cifar_class[0];
+}
+
