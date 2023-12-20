@@ -1,6 +1,9 @@
 # IDEs exclude
 *.vscode
 
+# Executables
+*a.out
+
 # See LICENSE.Cambridge for license details.
 *.o
 *.su
