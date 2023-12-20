@@ -1,0 +1,419 @@
+#include "types.h"
+#include "top.h"
+#include "coeffs_cifar.h"
+#include "biases_cifar.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <math.h>
+
+//#include "testimage.h"
+
+/*
+ * This version shall 
+ * 	- load a 640x480 RGB image in PPM3 format,
+ *  - do resizing to 24x24 RGB image in uint8_t
+ *  - do RGB (uint8_t RGB RGB RGB .... RGB) to TENSOR (float, RRRRRR ...RGGG.....GBB.....B) conversion 
+ *  - normalize the tensor (float)
+ *  - feed the normalized tensor to the network
+ *  - Get probabilities, and the result of classification
+ */
+
+#define DEBUG                  0
+#define DEBUG_PRINTF(...)      do { if (DEBUG) printf(__VA_ARGS__); } while (0)
+
+
+static led_type cifar_class[1];
+
+void read_input_img(char* filename, uint8_t* dst_img);
+void my_resizing(uint8_t *target_img, uint8_t *source_img, int source_size, int source_sizeX, int source_sizeY,
+                    int target_size, int target_sizeX, int target_sizeY);
+void img_to_tensor(float *target_tensor, uint8_t *source_img, int source_size, int source_sizeX, int source_sizeY);
+float *normalizing_tensor(float *target_tensor, float *source_tensor, int size); // size =  height * width
+float *normalizing(float *normalized_img, float *resized_img, int size); // size = height * width 
+
+#define IMG_HEIGHT 			480
+#define IMG_WIDTH 			640
+#define IMG_SIZE 			IMG_HEIGHT*IMG_WIDTH
+
+#define NN_IN_HEIGHT 		24
+#define NN_IN_WIDTH 		24
+#define NN_IN_SIZE 			NN_IN_HEIGHT*NN_IN_WIDTH
+
+int img_width, img_height, img_size;
+uint8_t pixels[IMG_SIZE * 3];							 //Tableau de pixel pour une image
+
+
+int main(int argc, char** argv)
+{	
+	if ( argc != 2)
+	{	
+		fprintf(stderr, "CHECK ARGUMENTS.");
+		return 0;
+	}
+
+	// Source = the 640*480 image
+	int source_size = IMG_SIZE; // SOURCE IMG (640*480)
+	int source_sizeY = IMG_HEIGHT;
+	int source_sizeX = IMG_WIDTH;
+	// target is the resized/normalized outputs
+	int target_size = NN_IN_SIZE; // RESIZED size
+	int target_sizeY = NN_IN_HEIGHT;
+	int target_sizeX = NN_IN_WIDTH;
+
+	// Allocate memory for intermediate images/tensors
+	uint8_t *source_img 		= (uint8_t *)calloc(IMG_SIZE * 3, sizeof(*source_img));
+	uint8_t *resized_img 		= (uint8_t *)calloc(NN_IN_SIZE * 3, sizeof(*resized_img));
+	float *resized_tensor 		= (float *)calloc(NN_IN_SIZE * 3, sizeof(*resized_tensor));
+	float *normalized_tensor 	= (float *)calloc(NN_IN_SIZE * 3, sizeof(*normalized_tensor));
+
+	// Load the 640*480 PPM image
+	fprintf(stderr, "Loading the supposed-to-be PPM image     %s\n", argv[1]);
+	read_input_img(argv[1], source_img);
+
+	// Resize to a 24*24 RGB img.
+	DEBUG_PRINTF("Starting resizing");
+	my_resizing(resized_img, source_img, source_size, source_sizeX, source_sizeY,
+				target_size, target_sizeX, target_sizeY);
+
+	// Convert to a tensor
+	DEBUG_PRINTF("Starting img_to_tensor \n");
+	img_to_tensor(resized_tensor, resized_img, target_size, target_sizeX, target_sizeY);
+
+	// Normalization
+	DEBUG_PRINTF("Starting normalization \n");
+	normalizing_tensor(normalized_tensor, resized_tensor, target_size);
+
+	// Exporting the coefficients
+	// for (int ii = 0; ii < NN_IN_SIZE * 3; ii++)
+	// 	fprintf(stdout, "%d\n", (int)resized_tensor[ii]);
+	// for (int ii = 0; ii < NN_IN_SIZE * 3; ii++)
+	// 	fprintf(stderr, "%.18lf\n", normalized_tensor[ii]);
+	// for(int i=0; i < NN_IN_WIDTH*NN_IN_HEIGHT*3 ;i++) {
+	// 	// image_test[i] = (image_type)(pixels[i]);
+	// 	printf("%d\n", source_img[i]);
+	// }
+
+	top(tab_coeffs, tab_biais, cifar_class, normalized_tensor);
+
+	printf("The class of the image is     %d\n", (int)cifar_class[0]);
+	
+	return 0;
+
+}
+
+char * ___strtok;
+
+
+char * strpbrk(const char * cs,const char * ct)
+{
+	const char *sc1,*sc2;
+
+	for( sc1 = cs; *sc1 != '\0'; ++sc1) {
+		for( sc2 = ct; *sc2 != '\0'; ++sc2) {
+			if (*sc1 == *sc2)
+				return (char *) sc1;
+		}
+	}
+	return NULL;
+}
+size_t strspn(const char *s, const char *accept)
+{
+	const char *p;
+	const char *a;
+	size_t count = 0;
+
+	for (p = s; *p != '\0'; ++p) {
+		for (a = accept; *a != '\0'; ++a) {
+			if (*p == *a)
+				break;
+		}
+		if (*a == '\0')
+			return count;
+		++count;
+	}
+
+	return count;
+}
+
+/**
+ * strtok - Split a string into tokens
+ * @s: The string to be searched
+ * @ct: The characters to search for
+ *
+ * WARNING: strtok is deprecated, use strsep instead.
+ */
+char * strtok(char * s,const char * ct)
+{
+	char *sbegin, *send;
+
+	sbegin  = s ? s : ___strtok;
+	if (!sbegin) {
+		return NULL;
+	}
+	sbegin += strspn(sbegin,ct);
+	if (*sbegin == '\0') {
+		___strtok = NULL;
+		return( NULL );
+	}
+	send = strpbrk( sbegin, ct);
+	if (send && *send != '\0')
+		*send++ = '\0';
+	___strtok = send;
+	return (sbegin);
+}
+
+void read_input_img(char* filename, uint8_t *dst_img)
+{
+	char *text = (char *)calloc(10000, sizeof(*text));
+	char *strToken = (char *)calloc(100, sizeof(*strToken));
+
+   FILE * fp;
+   int length = 0;
+   int width = 0;
+   int size = 0;
+   int c1 = 0;
+   int c2 = 0;
+   int i = 0;
+
+	fp = fopen(filename, "r");
+    if ( fp == NULL )
+    {
+        printf( "Could not open file test.c" ) ;
+        return ;
+    }
+
+	//Lecture de l'entete
+	fscanf(fp, "%c", &c1);
+	fscanf(fp, "%c", &c2);
+
+	//Si l'entete vaut les caracteres 'P3' alors, on est dans le cas d'un fichier ppm
+	if (c1 == 'P' && c2 == '3')
+	{
+		printf("Le fichier %s est un fichier ppm P3.\n", filename);
+		fgets(text, 10000, fp);
+		fgets(text, 10000, fp);
+		if (text[0] == '#')
+		{ // test ligne de commentaire de openCV
+			fgets(text, 10000, fp);
+		}
+		strToken = strtok(text, " ");
+		length = atoi(strToken); //Lecture de la longueur de l'image
+		strToken = strtok(NULL, "\n");
+		width = atoi(strToken); //Lecture de la largeur de l'image
+		size = length * width;
+		img_width = width;
+		img_height = length;
+		img_size = size;
+
+		// for (i = 0; i < size; i++)
+		// {
+		// 	pixels[i] = 0;
+		// }
+
+		// printf("File size: %d and image size : %d * %d = %d\n", fil.fsize, tab_length[n_image - 1], tab_width[n_image - 1], tab_size[n_image - 1]);
+		fgets(text, 10000, fp);
+		i = 0;
+		//calloc(3 * size, sizeof(*plop));
+		//Pour toutes les lignes du fichier
+		while (fp != NULL && i < (3 * size))
+		{
+			fgets(text, 10000, fp); //On lit une ligne
+			strToken = strtok(text, " ");	 //On separe les differents chiffres
+			//Pour tous les chiffres de la ligne
+			while (strToken != NULL && i < (3 * size))
+			{
+				dst_img[i] = atoi(strToken); //On remplit le tableau pixel par pixel
+				i++;
+				strToken = strtok(NULL, " "); //On selectionne le token suivant
+				if (strToken[0] == '\n')
+				{ // On enlève les caractère de saut de ligne '\n'
+					strToken = NULL;
+				}
+			}
+		}
+	}
+	//Si l'entete vaut 0xffe0 alors c'est un fichier jpg
+	else if (c1 == 0xff && c2 == 0xe0)
+	{
+		printf("Le fichier est un fichier jpg.\n");
+		//NON IMPLEMENTE
+		//UTILISER LA LIBRAIRIE JPG
+	}
+	// printf("n_image = %d\n", n_image);
+	// for (i = 0; i < size * 3; i++)
+	// {
+	// 	img[(n_image - 1) * IMG_SIZE * 3 + i] = pixels[i]; //On remplit le tableau global pour pouvoir reutiliser le tableau pixel
+	// }
+	// n_image += 1;
+	// printf("Closing file %s\n", file_name);
+
+	// Close the file
+	if (fclose(fp))
+	{
+		printf("fail to close file!");
+		return ;
+	}
+
+}
+
+
+// float *resizing(float *resized, /* uint8_t *data ,*/ /* int image_number ,*/ int target_sizeY, int target_sizeX, int target_size) void my_resize()
+// void my_resizing() //float *resized, /* uint8_t *data ,*/ /* int image_number ,*/ int target_sizeY, int target_sizeX, int target_size) void my_resize()
+void my_resizing(uint8_t *target_img, uint8_t *source_img, int source_size, int source_sizeX, int source_sizeY,
+                    int target_size, int target_sizeX, int target_sizeY)
+{
+  double temp = 0.0;
+  int w = 0;
+
+  DEBUG_PRINTF("Finished copying from the source\n");
+
+  int scale_factorY = source_sizeY / target_sizeY; // kernel hight size
+  int scale_factorX = source_sizeX / target_sizeX; // kernel widht size
+  // DEBUG_PRINTF("scale_factorY = %d\n", scale_factorY);
+  // DEBUG_PRINTF("scale_factorX = %d\n", scale_factorX);
+
+  float area = scale_factorY * scale_factorX; // kernel size
+  for (int y_dst = 0; y_dst < target_sizeY; y_dst++)
+  { // run through hight
+    for (int x_dst = 0; x_dst < target_sizeX; x_dst++)
+    { // run through widht
+      for (int ch_dst = 0; ch_dst < 3; ch_dst++)
+      { // run for each channel
+        // here we get a kernel pixels that are summed to produce a new one, to the respective channel
+        temp = 0.0;
+        for (int y_src = y_dst * scale_factorY; y_src < (y_dst + 1) * scale_factorY; y_src++)
+        { // run through hight
+          for (int x_src = x_dst * scale_factorX; x_src < (x_dst + 1) * scale_factorX; x_src++)
+          { // run through width
+            // temp = source_img[(i * 3 * target_sizeX * scale_factorY + y * 3 * target_sizeX) + (j * 3 * target_size + x * 3) + ch] + temp; // summed image
+            temp = (double)source_img[y_src * source_sizeX * 3 + x_src * 3 + ch_dst] + (double)temp; // summed image
+          }
+        }
+        // target_img[ y_dst*target_sizeX*3 + x_dst*3 + ch_dst ] = source_img[ y_dst*scale_factorY*source_sizeX*3 + x_dst*scale_factorX*3 + ch_dst ];
+        target_img[y_dst * target_sizeX * 3 + x_dst * 3 + ch_dst] = (int)(temp / area); // source_img[ y_dst*scale_factorY*source_sizeX*3 + x_dst*scale_factorX*3 + ch_dst ];
+      }
+    }
+  }
+  DEBUG_PRINTF("Finished resizing computation\n");
+}
+
+//
+// Normalizing the image 24x24 to be feed to the CNN
+//
+float *normalizing(float *normalized_img, float *resized_img, int size) // height * width * 3
+{
+  // Sum of pixels of each image (3 channels)
+  float mu = 0;
+  for (int i = 0; i < size; i++)
+  {
+    mu = resized_img[i] + mu;
+  }
+  mu = mu / size;
+
+  // Standard deviation: each pixel should be subtracted by mu, and then squared
+  float sigma = 0;
+  for (int i = 0; i < size; i++)
+  {
+    sigma = (resized_img[i] - mu) * (resized_img[i] - mu) + sigma; // Sigma squared
+  }
+  sigma = sqrt(sigma / size); // sigma itself
+
+  // Math operation to each pixel
+  float x = (1 / sqrt(size));
+  for (int i = 0; i < size; i++)
+  {
+    if (sigma > x)
+    {
+      normalized_img[i] = (resized_img[i] - mu) / (sigma);
+    }
+    else
+    {
+      normalized_img[i] = (resized_img[i] - mu) / (x);
+    }
+    //DEBUG_PRINTF("%f ", normalized_img[i]);
+    //DEBUG_PRINTF("%f ",resized_img[i]);
+  }
+
+  return normalized_img;
+}
+
+//
+// Normalizing the image 24x24 to be feed to the CNN
+//
+float *normalizing_tensor(float *target_tensor, float *source_tensor, int size) // height * width
+{
+  // Sum of pixels of each channel of the tensor
+  float mu, sigma;
+
+  for (int channel = 0; channel < 3; channel++)
+  { // run for each channel
+    // Initialize variables
+    mu = 0.0;
+    sigma = 0.0;
+
+    DEBUG_PRINTF("     >> normalizing Channel %d\n", channel);
+    int ioffset = channel * size;
+    for (int i = ioffset; i < ioffset + size; i++)
+    {
+      mu = source_tensor[i] + mu;
+    }
+    mu = mu / size;
+
+    DEBUG_PRINTF("The mean of this layer:  %lf\n", mu);
+
+    // Standard deviation: each pixel should be subtracted by mu, and then squared
+    sigma = 0;
+    for (int i = ioffset; i < ioffset + size; i++)
+    {
+      sigma = (source_tensor[i] - mu) * (source_tensor[i] - mu) + sigma; // Sigma squared
+    }
+    sigma = sqrt(sigma / size); // sigma itself
+
+    // Math operation to each pixel
+    float x = sqrt(1.0 / size); // rewritten for stability
+    for (int i = ioffset; i < ioffset + size; i++)
+    {
+      if (sigma > x)
+      {
+        target_tensor[i] = (source_tensor[i] - mu) / (sigma);
+      }
+      else
+      {
+        target_tensor[i] = (source_tensor[i] - mu) / (x);
+      }
+      //DEBUG_PRINTF("%f ", normalized_img[i]);
+      //DEBUG_PRINTF("%f ",resized_img[i]);
+    }
+  }
+
+  return target_tensor;
+}
+
+/*
+  Converting an RGB image to a tensor, 
+    i.e. R0R1R2......G0G1G2........B0B1B2......
+*/
+void img_to_tensor(float *target_tensor, uint8_t *source_img, int source_size, int source_sizeX, int source_sizeY)
+{
+  DEBUG_PRINTF("Launchinf img to tensor ...\n");
+
+  for (int channel = 0; channel < 3; channel++)
+  { // run for each channel
+    int ioffset = channel * (source_sizeX * source_sizeY);
+    for (int y_src = 0; y_src < source_sizeY; y_src++)
+    { // run through hight
+      for (int x_src = 0; x_src < source_sizeX; x_src++)
+      { // run through widht
+        // Vec3b &pixel = mine_resized_24_24.at<Vec3b>(y_src, x_src);
+        // DEBUG_PRINTF("Offset = %d", ioffset);
+        target_tensor[ioffset + y_src * source_sizeX + x_src] = (float)source_img[y_src * source_sizeX * 3 + x_src * 3 + channel];
+      }
+      // DEBUG_PRINTF("IMG_to_TENSOR ... End of Channel %d\n", channel);  
+    }
+    DEBUG_PRINTF("IMG_to_TENSOR ... End of Channel %d\n", channel);  
+  }
+
+  DEBUG_PRINTF("End of conversion\n");
+  // return target_tensor;
+}

@@ -1,0 +1,58 @@
+#include "types.h"
+#include "top.h"
+#include "coeffs_cifar.h"
+#include "biases_cifar.h"
+#include <stdio.h>
+#include <stdlib.h>
+//#include "testimage.h"
+
+static led_type cifar_class[1];
+
+int main(int argc, char** argv /* argv1 > dataset path */)
+{	
+	image_type image_test[IMAGE_WIDTH*IMAGE_HEIGHT*3];
+	image_type image_int;
+	char test_img_name[50] = {0};
+
+	// argv1 ==> datatset path
+	// argv2 ==> csvfile, to write the classification results to.
+	// FILE* csvfile = fopen(argv[2], "w");
+
+	// if ( argc != 2)
+	// {	
+	// 	fprintf(stderr, "CHECK ARGUMENTS.");
+	// 	return 0;
+	// }
+
+	// fprintf(stderr, "Loading all images 0.txt to 9999.txt from path %s\n", argv[1]);
+	FILE* f; 
+	for(int imgi=1; imgi<2; imgi++)
+	{
+		// Construct the name of the file
+		sprintf(test_img_name, "%s/%d.txt", argv[1], imgi);
+		// fprintf(stderr, "Loading %s\n", test_img_name);
+		
+		f = fopen(test_img_name, "r");
+		if (f == NULL) {
+			printf("-1\n");
+			continue;
+		}
+		
+		for(int i=0;i<IMAGE_WIDTH*IMAGE_HEIGHT*3;i++) {
+			// fscanf(f, "%f", &image_int);
+			fscanf(f, "%lf", &image_int);
+			image_test[i] = (image_type)image_int;
+		}
+
+		top(tab_coeffs, tab_biais, cifar_class, image_test);
+
+		//fprintf(csvfile, "%d\n", cifar_class[0]);
+		printf("Class of img [ %d ] is  %d\n", imgi, cifar_class[0]);
+	}
+
+	fclose(f);
+	//fclose(csvfile);
+	
+	return 0; //(int)cifar_class[0];
+}
+

@@ -13,6 +13,7 @@ The FPGA we are using is the NEXYS A7. The boards are numbered A7-2 and A7-3 and
 - Interface with FPGA:
     - Right-Left: Switches images
     - Up-Down: Switches filter and CNN (image + label)
+- FPGA Boards: A7-2; A7-3
 
 # Project files
 
@@ -37,3 +38,5 @@ All files are in Project_SE.tar.gz. Compilation should be done in the virtual ma
 - [ ] Integration
   - [ ] Interruption via push button 
 - [ ] Bonus
+
+ 
