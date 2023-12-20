@@ -6,6 +6,11 @@ In this project, students will develop a demonstrator based on a RISC-V softcore
 
 The FPGA we are using is the NEXYS A7. The boards are numbered A7-2 and A7-3 and 2 4GB SD cards.
 
+# Compilation
+
+- Go to lowrisc_DATE2020 and source set_env.sh
+- Go to TPSoC_Resources/TP3ANew and source sourceme.sh
+
 # Project description
 
 - Bootloader: Jumps to the SD card, DDR or ...

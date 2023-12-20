@@ -8,6 +8,10 @@ ifndef RISCV
 $(error Please set environment variable RISCV. Please take a look at README)
 endif
 
+ifndef GOOD_TO_GO
+$(error This Makefile is not working yet - Please compile your project individualy with your own Makefile)
+endif
+
 #--------------------------------------------------------------------
 # Build rules
 #--------------------------------------------------------------------

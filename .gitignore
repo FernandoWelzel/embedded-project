@@ -1,5 +1,8 @@
+# IDEs exclude
+*.vscode
+
 # See LICENSE.Cambridge for license details.
 *.o
 *.su
-boot
-mmc.a
+*boot
+*mmc.a
