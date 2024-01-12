@@ -50,3 +50,5 @@ g++ test/application/test_display.c src/application/src/display.c
 '''
 
 Try to delete the compiled executable that you've created before commiting.
+
+Test
